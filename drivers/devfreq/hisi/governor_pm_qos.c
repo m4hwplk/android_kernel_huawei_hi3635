@@ -10,6 +10,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/devfreq.h>
@@ -17,8 +18,22 @@
 #include <linux/mutex.h>
 #include <linux/pm_qos.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
+#include <linux/hisi/hisi_drmdriver.h>
+#include <asm/page.h>
+#include "securec.h"
+#ifdef CONFIG_HISI_DDR_CHINTLV
+#include <soc_acpu_baseaddr_interface.h>
+#include <soc_dmss_interface.h>
+#ifndef SOC_ACPU_DMSS_CFG_BASE_ADDR
+#define SOC_ACPU_DMSS_CFG_BASE_ADDR SOC_ACPU_DMSS_BASE_ADDR	/*just for austin*/
+#endif
+#endif
 
-#include "governor.h"
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
+#include "governor_pm_qos.h"
+#endif
+#include <governor.h>
 
 #define DFPQ_BDUTILIZATION		(60)
 #define DFPQ_MAX_BDUTILIZATION		(100)
@@ -40,7 +55,7 @@ show_bd_utilization(struct device *dev,
 
 	mutex_lock(&devfreq->lock);
 	data = devfreq->data;
-	ret = sprintf(buf, "%u\n", data->bd_utilization);
+	ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "%u\n", data->bd_utilization);
 	mutex_unlock(&devfreq->lock);
 
 	return ret;
@@ -55,7 +70,8 @@ store_bd_utilization(struct device *dev, struct device_attribute *attr,
 	unsigned int input;
 	int ret = 0;
 
-	ret = sscanf(buf, "%u", &input);
+	// cppcheck-suppress *
+	ret = sscanf(buf, "%u", &input); /* unsafe_function_ignore: sscanf */
 	if ((ret != 1) || (input > DFPQ_MAX_BDUTILIZATION) ||
 		(input < DFPQ_MIN_BDUTILIZATION))
 		return -EINVAL;
@@ -99,19 +115,68 @@ show_ddr_bandwidth(struct device *dev, struct device_attribute *attr, char *buf)
 	bw = freq * data->bd_utilization * data->bytes_per_sec_per_hz / 100;
 	mutex_unlock(&devfreq->lock);
 
-	ret = sprintf(buf, "%lu\n", bw);
+	ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "%lu\n", bw);
 	return ret;
 }
 
-static DEVICE_ATTR(bd_utilization, S_IRUGO | S_IWUSR,
+/*Austin SOC_DMSS_GLB_ADDR_INTLV_ADDR
+intlv_granule	[6:4]
+"0x0: 128Byte;
+ 0x1: 256Byte;
+ 0x2: 512Byte;
+ 0x3: 1KByte;
+ 0x4: 2KByte;
+ 0x5: 4KByte;*/
+
+/*lint -e647 */
+#ifdef CONFIG_HISI_DDR_CHINTLV
+static ssize_t
+show_ddr_chintlv(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
+	struct devfreq *devfreq = to_devfreq(dev);
+	unsigned long chintlv = 0;
+	unsigned long reg_val = 0;
+
+	mutex_lock(&devfreq->lock);
+
+	reg_val = atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,\
+		SOC_DMSS_GLB_ADDR_INTLV_ADDR((u64)SOC_ACPU_DMSS_CFG_BASE_ADDR),\
+		0x4, ACCESS_REGISTER_FN_SUB_ID_DDR_INTLV);
+	chintlv = 1 << ((reg_val >> 4) & 0x7);
+	/*Austin*/
+	chintlv *= 128;
+
+	/*boston chintlv = (chintlv / 2)  * 128*/
+
+	/*pr_err("%s %d, chintlv %d\n", __func__, __LINE__,chintlv);*/
+
+	mutex_unlock(&devfreq->lock);
+
+	ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "%lu\n", chintlv);
+	return ret;
+}
+#endif
+/*lint +e647 */
+
+/*lint -e665 */
+static DEVICE_ATTR(bd_utilization, (S_IRUGO | S_IWUSR),
 			show_bd_utilization, store_bd_utilization);
 static DEVICE_ATTR(ddr_bandwidth, S_IRUGO, show_ddr_bandwidth, NULL);
+
+#ifdef CONFIG_HISI_DDR_CHINTLV
+static DEVICE_ATTR(ddr_chintlv, S_IRUGO, show_ddr_chintlv, NULL);
+#endif
 
 static const struct attribute *governor_pm_qos_attrs[] = {
 	&dev_attr_bd_utilization.attr,
 	&dev_attr_ddr_bandwidth.attr,
+#ifdef CONFIG_HISI_DDR_CHINTLV
+	&dev_attr_ddr_chintlv.attr,
+#endif
 	NULL,
 };
+/*lint +e665 */
 
 static LIST_HEAD(devfreq_pm_qos_list);
 static DEFINE_MUTEX(devfreq_pm_qos_mutex);
@@ -158,6 +223,7 @@ devfreq_pm_qos_notifier(struct notifier_block *nb, unsigned long val, void *v)
 	return NOTIFY_OK;
 }
 
+/*lint -e429*/
 static int devfreq_pm_qos_gov_init(struct devfreq *df)
 {
 	int ret;
@@ -207,6 +273,7 @@ static int devfreq_pm_qos_gov_init(struct devfreq *df)
 
 	return 0;
 }
+/*lint +e429*/
 
 static void devfreq_pm_qos_gov_exit(struct devfreq *df)
 {

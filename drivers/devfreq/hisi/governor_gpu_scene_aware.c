@@ -21,12 +21,12 @@
 #include <linux/list.h>
 #include <governor.h>
 
-#ifdef CONFIG_HUAWEI_BDAT
-#include <huawei_platform/power/bdat/bdat.h>
+#ifdef CONFIG_HUAWEI_DUBAI
+#include <huawei_platform/power/dubai/dubai.h>
 #endif
 
 #define DEFAULT_GO_HISPEED_LOAD		90
-#define DEFAULT_HISPEED_FREQ		480000000
+#define DEFAULT_HISPEED_FREQ		533000000
 #define DEFAULT_VSYNC_EQULALIZE		45
 #define DEFAULT_LOADING_WINDOW		10
 #define TARGET_LOAD			85
@@ -36,7 +36,7 @@
 
 #define SURPORT_POLICY_NUM		20
 #define SURPORT_NTARGET_LOAD_MAX	40
-#define POLICY_BUF_MAX			1536
+#define POLICY_BUF_MAX			1024
 #define POLICY_ID_BUF_MAX		10
 
 
@@ -88,8 +88,8 @@ static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 	unsigned int targetload, vsync_equalize, util;
 	unsigned long a;
 
-#ifdef CONFIG_HUAWEI_BDAT
-	bdat_update_gpu_info(stat.current_frequency, stat.busy_time,
+#ifdef CONFIG_HUAWEI_DUBAI
+	dubai_update_gpu_info(stat.current_frequency, stat.busy_time,
 		stat.total_time, df->profile->polling_ms);
 #endif
 
@@ -659,4 +659,3 @@ static void __exit devfreq_gpu_scene_aware_exit(void)
 }
 module_exit(devfreq_gpu_scene_aware_exit);
 MODULE_LICENSE("GPL");
-
