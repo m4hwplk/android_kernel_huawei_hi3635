@@ -1083,7 +1083,7 @@ static int __init devfreq_init(void)
 		pr_err("%s: couldn't create workqueue\n", __FILE__);
 		return -ENOMEM;
 	}
-	devfreq_class->dev_groups = devfreq_groups;
+	devfreq_class->dev_attrs = devfreq_groups;
 
 	return 0;
 }
